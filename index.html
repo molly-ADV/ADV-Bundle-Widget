@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -25,25 +26,26 @@
     <div class="fitbox">
       <canvas class="sparkles"></canvas>
       <div class="bundle">
-        <img src="https://raw.githubusercontent.com/molly-ADV/ADV-Bundle-Widget/main/ADV-bundle-pink.png" alt="ADV Bundle">
+        <img src="https://raw.githubusercontent.com/molly-ADV/ADV-Bundle-Widget/main/ADV-bundle-sticker.png" alt="ADV Bundle">
       </div>
     </div>
   </div>
 
 <script>
 const CONFIG = {
-  bandTopPct: 72, bandHeightPct: 22,
+  bandTopPct: 85,   // pushed lower so sparkles align under ADVANCED text
+  bandHeightPct: 12,
   baseColor: 'rgba(255,150,200,',
   minSize: 2, maxSize: 6, minLife: 1.6, maxLife: 3.4,
   density: 1.0, riseMin: 18, riseMax: 45, drift: 16,
-  glow: 20, spawnsPer100kpx: 0.075
+  glow: 20, spawnsPer100kpx: 0.085
 };
 const canvas=document.querySelector('canvas.sparkles'),ctx=canvas.getContext('2d');
 function resizeCanvas(){const b=canvas.getBoundingClientRect();const dpr=Math.max(1,window.devicePixelRatio||1);canvas.width=Math.floor(b.width*dpr);canvas.height=Math.floor(b.height*dpr);ctx.setTransform(dpr,0,0,dpr,0,0);}resizeCanvas();addEventListener('resize',resizeCanvas);
 const parts=[];function rand(a,b){return a+Math.random()*(b-a);}
-function spawn(dt){const w=canvas.clientWidth,h=canvas.clientHeight;const bandTop=h*(CONFIG.bandTopPct/100);const bandH=h*(CONFIG.bandHeightPct/100);const area=w*bandH;const perSec=CONFIG.spawnsPer100kpx*CONFIG.density*(area/100000);const expected=perSec*dt;let toMake=expected+Math.random();while((toMake-=1)>=0){parts.push({x:rand(w*0.25,w*0.75),y:rand(bandTop,bandTop+bandH),vx:rand(-CONFIG.drift,CONFIG.drift),vy:-rand(CONFIG.riseMin,CONFIG.riseMax),r:rand(CONFIG.minSize,CONFIG.maxSize),life:rand(CONFIG.minLife,CONFIG.maxLife),age:0});}}
+function spawn(dt){const w=canvas.clientWidth,h=canvas.clientHeight;const bandTop=h*(CONFIG.bandTopPct/100);const bandH=h*(CONFIG.bandHeightPct/100);const area=w*bandH;const perSec=CONFIG.spawnsPer100kpx*CONFIG.density*(area/100000);const expected=perSec*dt;let toMake=expected+Math.random();while((toMake-=1)>=0){parts.push({x:rand(w*0.2,w*0.8),y:rand(bandTop,bandTop+bandH),vx:rand(-CONFIG.drift,CONFIG.drift),vy:-rand(CONFIG.riseMin,CONFIG.riseMax),r:rand(CONFIG.minSize,CONFIG.maxSize),life:rand(CONFIG.minLife,CONFIG.maxLife),age:0});}}
 let last=performance.now();function tick(now){const dt=Math.min(0.033,(now-last)/1000);last=now;spawn(dt);for(let i=parts.length-1;i>=0;i--){const p=parts[i];p.age+=dt;if(p.age>p.life){parts.splice(i,1);continue;}p.x+=p.vx*dt;p.y+=p.vy*dt;}
-const w=canvas.clientWidth,h=canvas.clientHeight;ctx.clearRect(0,0,w,h);const bandTop=h*(CONFIG.bandTopPct/100);const bandH=h*(CONFIG.bandHeightPct/100);const midY=bandTop+bandH*0.7;const grd=ctx.createRadialGradient(w/2,midY,10,w/2,midY,Math.max(w,h)*0.6);grd.addColorStop(0,'rgba(255,170,210,0.28)');grd.addColorStop(1,'rgba(255,170,210,0.0)');ctx.fillStyle=grd;ctx.fillRect(0,bandTop-40,w,bandH+80);ctx.save();ctx.shadowColor='rgba(255,160,210,0.95)';ctx.shadowBlur=CONFIG.glow;for(const p of parts){const t=p.age/p.life;const a=(1-t)*(0.35+0.65*(1-Math.abs(t*2-1)));ctx.fillStyle=CONFIG.baseColor+(0.15+0.85*a)+')';const pulse=0.6+0.4*Math.sin((p.age*6+p.x*0.05));const r=p.r*pulse;drawStar(p.x,p.y,r);}ctx.restore();requestAnimationFrame(tick);}requestAnimationFrame(tick);
+const w=canvas.clientWidth,h=canvas.clientHeight;ctx.clearRect(0,0,w,h);const bandTop=h*(CONFIG.bandTopPct/100);const bandH=h*(CONFIG.bandHeightPct/100);const midY=bandTop+bandH*0.5;const grd=ctx.createRadialGradient(w/2,midY,10,w/2,midY,Math.max(w,h)*0.6);grd.addColorStop(0,'rgba(255,170,210,0.28)');grd.addColorStop(1,'rgba(255,170,210,0.0)');ctx.fillStyle=grd;ctx.fillRect(0,bandTop-40,w,bandH+80);ctx.save();ctx.shadowColor='rgba(255,160,210,0.95)';ctx.shadowBlur=CONFIG.glow;for(const p of parts){const t=p.age/p.life;const a=(1-t)*(0.35+0.65*(1-Math.abs(t*2-1)));ctx.fillStyle=CONFIG.baseColor+(0.15+0.85*a)+')';const pulse=0.6+0.4*Math.sin((p.age*6+p.x*0.05));const r=p.r*pulse;drawStar(p.x,p.y,r);}ctx.restore();requestAnimationFrame(tick);}requestAnimationFrame(tick);
 function drawStar(x,y,r){ctx.beginPath();ctx.moveTo(x,y-r);ctx.lineTo(x+r*0.35,y-r*0.35);ctx.lineTo(x+r,y);ctx.lineTo(x+r*0.35,y+r*0.35);ctx.lineTo(x,y+r);ctx.lineTo(x-r*0.35,y+r*0.35);ctx.lineTo(x-r,y);ctx.lineTo(x-r*0.35,y-r*0.35);ctx.closePath();ctx.fill();}
 document.addEventListener('visibilitychange',()=>{last=performance.now();});
 </script>

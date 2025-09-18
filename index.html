@@ -6,203 +6,46 @@
 <title>ADV Bundle + Pink Sparkles</title>
 <style>
   :root{
-    --canvas-w: 1600;       /* internal render width  */
-    --canvas-h: 700;        /* internal render height */
-    --float-amp: 12px;      /* float amplitude        */
-    --float-speed: 6s;      /* float cycle duration   */
+    --canvas-w: 1600;
+    --canvas-h: 700;
+    --float-amp: 12px;
+    --float-speed: 6s;
   }
-
   html,body{height:100%;margin:0;background:transparent;}
-  .stage{
-    position:relative;
-    width:100vw; height:100vh;
-    overflow:hidden; background:transparent;
-    display:flex; align-items:center; justify-content:center;
-  }
-
-  /* Scale everything responsively while keeping aspect */
-  .fitbox{
-    position:relative;
-    width:min(100vw, calc(100vh * (var(--canvas-w)/var(--canvas-h))));
-    aspect-ratio: var(--canvas-w) / var(--canvas-h);
-  }
-
-  /* Sparkles live on the canvas layer (under the image) */
-  canvas.sparkles{
-    position:absolute; inset:0; z-index:1; background:transparent;
-  }
-
-  /* Image sits above sparkles */
-  .bundle{
-    position:absolute; inset:0; z-index:2;
-    display:flex; align-items:center; justify-content:center;
-    pointer-events:none;  /* so clicks pass through if you add links behind */
-  }
-
-  .bundle img{
-    max-width:100%;
-    max-height:100%;
-    animation: floatY var(--float-speed) ease-in-out infinite;
-    filter: drop-shadow(0 8px 22px rgba(255,150,200,.35));
-  }
-
-  /* Gentle vertical bob */
-  @keyframes floatY{
-    0%,100% { transform: translateY(calc(var(--float-amp) * -0.2)); }
-    50%     { transform: translateY(var(--float-amp)); }
-  }
+  .stage{position:relative;width:100vw;height:100vh;overflow:hidden;display:flex;align-items:center;justify-content:center;}
+  .fitbox{position:relative;width:min(100vw, calc(100vh * (var(--canvas-w)/var(--canvas-h))));aspect-ratio: var(--canvas-w)/var(--canvas-h);}
+  canvas.sparkles{position:absolute;inset:0;z-index:1;background:transparent;}
+  .bundle{position:absolute;inset:0;z-index:2;display:flex;align-items:center;justify-content:center;pointer-events:none;}
+  .bundle img{max-width:100%;max-height:100%;animation: floatY var(--float-speed) ease-in-out infinite;filter: drop-shadow(0 8px 22px rgba(255,150,200,.35));}
+  @keyframes floatY{0%,100%{transform:translateY(calc(var(--float-amp)*-0.2));}50%{transform:translateY(var(--float-amp));}}
 </style>
 </head>
 <body>
   <div class="stage">
     <div class="fitbox">
-      <!-- Sparkles BELOW -->
       <canvas class="sparkles"></canvas>
-
-      <!-- Your composite image (products + logo) ABOVE -->
       <div class="bundle">
-        <!-- Swap the src to your hosted image -->
-        <img src="https://files.catbox.moe/placeholder.png" alt="ADV Bundle" id="bundleImg">
-        <!-- e.g. if you hosted it:  src="https://yourcdn/ADV-bundle-pink.png"  -->
+        <img src="https://raw.githubusercontent.com/molly-ADV/ADV-Bundle-Widget/main/ADV-bundle-pink.png" alt="ADV Bundle">
       </div>
     </div>
   </div>
 
 <script>
-/* ===================== CONFIG ===================== */
 const CONFIG = {
-  // Where should sparkles appear? (as % of canvas height)
-  bandTopPct: 72,     // start of the “logo zone” band (from top)
-  bandHeightPct: 22,  // thickness of band
-  // Sparkle look
-  baseColor: 'rgba(255,150,200,', // pink hue (alpha appended in code)
-  minSize: 2,   // px
-  maxSize: 6,   // px
-  minLife: 1.6, // seconds
-  maxLife: 3.4, // seconds
-  density: 1.0, // 1.0 = default count; raise for more sparkles
-  // Trajectory
-  riseMin: 18,  // px/sec
-  riseMax: 45,  // px/sec
-  drift: 16,    // sideways random drift px/sec
-  // Glow
-  glow: 20,     // shadowBlur
-  // Spawn rate baseline (scales with canvas size)
-  spawnsPer100kpx: 0.075
+  bandTopPct: 72, bandHeightPct: 22,
+  baseColor: 'rgba(255,150,200,',
+  minSize: 2, maxSize: 6, minLife: 1.6, maxLife: 3.4,
+  density: 1.0, riseMin: 18, riseMax: 45, drift: 16,
+  glow: 20, spawnsPer100kpx: 0.075
 };
-/* =================================================== */
-
-const canvas = document.querySelector('canvas.sparkles');
-const ctx = canvas.getContext('2d');
-
-function resizeCanvas(){
-  const box = canvas.getBoundingClientRect();
-  // use devicePixelRatio for crisp rendering
-  const dpr = Math.max(1, window.devicePixelRatio || 1);
-  canvas.width  = Math.floor(box.width * dpr);
-  canvas.height = Math.floor(box.height * dpr);
-  ctx.setTransform(dpr,0,0,dpr,0,0); // draw in CSS pixels
-}
-resizeCanvas();
-addEventListener('resize', resizeCanvas);
-
-// Particles
-const parts = [];
-function rand(a,b){ return a + Math.random()*(b-a); }
-
-function spawn(dt){
-  // spawn amount scales with visible band area
-  const w = canvas.clientWidth, h = canvas.clientHeight;
-  const bandTop   = h * (CONFIG.bandTopPct/100);
-  const bandH     = h * (CONFIG.bandHeightPct/100);
-  const area      = w * bandH;
-  const perSec    = CONFIG.spawnsPer100kpx * CONFIG.density * (area/100000);
-  const expected  = perSec * dt;
-
-  let toMake = expected + Math.random();
-  while((toMake-=1) >= 0){
-    parts.push({
-      x: rand(w*0.25, w*0.75),    // concentrate near center; change to 0..w for full width
-      y: rand(bandTop, bandTop + bandH),
-      vx: rand(-CONFIG.drift, CONFIG.drift),
-      vy: -rand(CONFIG.riseMin, CONFIG.riseMax),
-      r: rand(CONFIG.minSize, CONFIG.maxSize),
-      life: rand(CONFIG.minLife, CONFIG.maxLife),
-      age: 0
-    });
-  }
-}
-
-let last=performance.now();
-function tick(now){
-  const dt = Math.min(0.033, (now-last)/1000); // clamp for stability
-  last = now;
-
-  spawn(dt);
-  // update
-  for(let i=parts.length-1;i>=0;i--){
-    const p = parts[i];
-    p.age += dt;
-    if(p.age > p.life){ parts.splice(i,1); continue; }
-    p.x += p.vx*dt;
-    p.y += p.vy*dt;
-  }
-
-  // draw
-  const w = canvas.clientWidth, h = canvas.clientHeight;
-  ctx.clearRect(0,0,w,h);
-
-  // soft radial gradient “ground glow” under the logo band
-  const bandTop = h * (CONFIG.bandTopPct/100);
-  const bandH   = h * (CONFIG.bandHeightPct/100);
-  const midY    = bandTop + bandH * 0.7;
-  const grd = ctx.createRadialGradient(w/2, midY, 10, w/2, midY, Math.max(w,h)*0.6);
-  grd.addColorStop(0, 'rgba(255,170,210,0.28)');
-  grd.addColorStop(1, 'rgba(255,170,210,0.0)');
-  ctx.fillStyle = grd;
-  ctx.fillRect(0, bandTop-40, w, bandH+80);
-
-  ctx.save();
-  ctx.shadowColor = 'rgba(255,160,210,0.95)';
-  ctx.shadowBlur = CONFIG.glow;
-
-  for(const p of parts){
-    const t = p.age / p.life;             // 0..1
-    const a = (1 - t) * (0.35 + 0.65*(1-Math.abs(t*2-1))); // fade in/out
-    ctx.fillStyle = CONFIG.baseColor + (0.15 + 0.85*a) + ')';
-
-    // twinkle: small size pulse
-    const pulse = 0.6 + 0.4*Math.sin((p.age*6 + p.x*0.05));
-    const r = p.r * pulse;
-
-    // draw sparkle as a 4-point star
-    drawStar(p.x, p.y, r);
-  }
-  ctx.restore();
-
-  requestAnimationFrame(tick);
-}
-requestAnimationFrame(tick);
-
-function drawStar(x,y,r){
-  ctx.beginPath();
-  // diamond + cross style star
-  ctx.moveTo(x, y - r);
-  ctx.lineTo(x + r*0.35, y - r*0.35);
-  ctx.lineTo(x + r, y);
-  ctx.lineTo(x + r*0.35, y + r*0.35);
-  ctx.lineTo(x, y + r);
-  ctx.lineTo(x - r*0.35, y + r*0.35);
-  ctx.lineTo(x - r, y);
-  ctx.lineTo(x - r*0.35, y - r*0.35);
-  ctx.closePath();
-  ctx.fill();
-}
-
-/* Optional: pause float/sparkles when not visible to save CPU */
-document.addEventListener('visibilitychange', () => {
-  last = performance.now();
-});
+const canvas=document.querySelector('canvas.sparkles'),ctx=canvas.getContext('2d');
+function resizeCanvas(){const b=canvas.getBoundingClientRect();const dpr=Math.max(1,window.devicePixelRatio||1);canvas.width=Math.floor(b.width*dpr);canvas.height=Math.floor(b.height*dpr);ctx.setTransform(dpr,0,0,dpr,0,0);}resizeCanvas();addEventListener('resize',resizeCanvas);
+const parts=[];function rand(a,b){return a+Math.random()*(b-a);}
+function spawn(dt){const w=canvas.clientWidth,h=canvas.clientHeight;const bandTop=h*(CONFIG.bandTopPct/100);const bandH=h*(CONFIG.bandHeightPct/100);const area=w*bandH;const perSec=CONFIG.spawnsPer100kpx*CONFIG.density*(area/100000);const expected=perSec*dt;let toMake=expected+Math.random();while((toMake-=1)>=0){parts.push({x:rand(w*0.25,w*0.75),y:rand(bandTop,bandTop+bandH),vx:rand(-CONFIG.drift,CONFIG.drift),vy:-rand(CONFIG.riseMin,CONFIG.riseMax),r:rand(CONFIG.minSize,CONFIG.maxSize),life:rand(CONFIG.minLife,CONFIG.maxLife),age:0});}}
+let last=performance.now();function tick(now){const dt=Math.min(0.033,(now-last)/1000);last=now;spawn(dt);for(let i=parts.length-1;i>=0;i--){const p=parts[i];p.age+=dt;if(p.age>p.life){parts.splice(i,1);continue;}p.x+=p.vx*dt;p.y+=p.vy*dt;}
+const w=canvas.clientWidth,h=canvas.clientHeight;ctx.clearRect(0,0,w,h);const bandTop=h*(CONFIG.bandTopPct/100);const bandH=h*(CONFIG.bandHeightPct/100);const midY=bandTop+bandH*0.7;const grd=ctx.createRadialGradient(w/2,midY,10,w/2,midY,Math.max(w,h)*0.6);grd.addColorStop(0,'rgba(255,170,210,0.28)');grd.addColorStop(1,'rgba(255,170,210,0.0)');ctx.fillStyle=grd;ctx.fillRect(0,bandTop-40,w,bandH+80);ctx.save();ctx.shadowColor='rgba(255,160,210,0.95)';ctx.shadowBlur=CONFIG.glow;for(const p of parts){const t=p.age/p.life;const a=(1-t)*(0.35+0.65*(1-Math.abs(t*2-1)));ctx.fillStyle=CONFIG.baseColor+(0.15+0.85*a)+')';const pulse=0.6+0.4*Math.sin((p.age*6+p.x*0.05));const r=p.r*pulse;drawStar(p.x,p.y,r);}ctx.restore();requestAnimationFrame(tick);}requestAnimationFrame(tick);
+function drawStar(x,y,r){ctx.beginPath();ctx.moveTo(x,y-r);ctx.lineTo(x+r*0.35,y-r*0.35);ctx.lineTo(x+r,y);ctx.lineTo(x+r*0.35,y+r*0.35);ctx.lineTo(x,y+r);ctx.lineTo(x-r*0.35,y+r*0.35);ctx.lineTo(x-r,y);ctx.lineTo(x-r*0.35,y-r*0.35);ctx.closePath();ctx.fill();}
+document.addEventListener('visibilitychange',()=>{last=performance.now();});
 </script>
 </body>
 </html>

@@ -1,9 +1,10 @@
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>ADV Bundle + Sparkles + Shimmer</title>
+<title>ADV Bundle • Clean + Sparkles</title>
 <style>
   :root{
     --canvas-w: 1600;
@@ -15,42 +16,26 @@
   .stage{position:relative;width:100vw;height:100vh;overflow:hidden;display:flex;align-items:center;justify-content:center;}
   .fitbox{position:relative;width:min(100vw, calc(100vh * (var(--canvas-w)/var(--canvas-h))));aspect-ratio: var(--canvas-w)/var(--canvas-h);}
   canvas.sparkles{position:absolute;inset:0;z-index:1;background:transparent;}
-  .bundle{position:absolute;inset:0;z-index:2;display:flex;align-items:center;justify-content:center;pointer-events:none;}
-  .bundle img{max-width:100%;max-height:100%;animation: floatY var(--float-speed) ease-in-out infinite;filter: drop-shadow(0 8px 22px rgba(255,150,200,.35));}
 
-  /* floating animation */
+  /* Display canvas for the CLEANED image (replaces <img>) */
+  canvas.hero{position:absolute;inset:0;z-index:2;pointer-events:none;}
+
+  /* Shimmer overlay masked to the cleaned image once it’s ready */
+  .shimmer{
+    position:absolute; inset:0; z-index:3; pointer-events:none;
+    background: linear-gradient(120deg, rgba(255,150,200,0) 20%, rgba(255,150,200,.6) 50%, rgba(255,150,200,0) 80%);
+    mix-blend-mode: screen;
+    animation: shimmer 5s linear infinite;
+    opacity: 0;           /* fade in after mask is set */
+    transition: opacity .2s linear;
+  }
+  @keyframes shimmer{0%{transform:translateX(-100%);}100%{transform:translateX(100%);}}
+
+  /* Nice float */
+  .float { animation: floatY var(--float-speed) ease-in-out infinite; }
   @keyframes floatY{
     0%,100% { transform: translateY(calc(var(--float-amp)*-0.2)); }
     50%     { transform: translateY(var(--float-amp)); }
-  }
-
-  /* shimmer overlay (masked to PNG shape) */
-  .bundle::after{
-    content:"";
-    position:absolute;inset:0;
-    background: linear-gradient(
-      120deg,
-      rgba(255,150,200,0) 20%,
-      rgba(255,150,200,0.6) 50%,
-      rgba(255,150,200,0) 80%
-    );
-    mix-blend-mode: screen;
-    animation: shimmer 5s linear infinite;
-    pointer-events:none;
-
-    -webkit-mask-image: url("https://raw.githubusercontent.com/molly-ADV/ADV-Bundle-Widget/main/ADV-bundle-sticker.png");
-    -webkit-mask-repeat: no-repeat;
-    -webkit-mask-position: center;
-    -webkit-mask-size: contain;
-    mask-image: url("https://raw.githubusercontent.com/molly-ADV/ADV-Bundle-Widget/main/ADV-bundle-sticker.png");
-    mask-repeat: no-repeat;
-    mask-position: center;
-    mask-size: contain;
-  }
-
-  @keyframes shimmer {
-    0%   { transform: translateX(-100%); }
-    100% { transform: translateX(100%); }
   }
 </style>
 </head>
@@ -58,101 +43,230 @@
   <div class="stage">
     <div class="fitbox">
       <canvas class="sparkles"></canvas>
-      <div class="bundle">
-        <img src="https://raw.githubusercontent.com/molly-ADV/ADV-Bundle-Widget/main/ADV-bundle-sticker.png" alt="ADV Bundle">
-      </div>
+
+      <!-- Cleaned image is drawn to this canvas -->
+      <canvas class="hero float"></canvas>
+
+      <!-- Shimmer masked to the cleaned pixels (no corner bleed) -->
+      <div class="shimmer" id="shimmer"></div>
     </div>
   </div>
 
 <script>
-/* Sparkle Config */
+/* ====== SETTINGS ====== */
+const IMAGE_URL = "https://raw.githubusercontent.com/molly-ADV/ADV-Bundle-Widget/main/ADV-bundle-sticker.png";
+
+/* Sparkles */
 const CONFIG = {
-  bandTopPct: 85,   // positioned under ADVANCED text
-  bandHeightPct: 12,
+  bandTopPct: 85, bandHeightPct: 12,
   baseColor: 'rgba(255,150,200,',
   minSize: 2, maxSize: 6, minLife: 1.6, maxLife: 3.4,
   density: 1.0, riseMin: 18, riseMax: 45, drift: 16,
   glow: 20, spawnsPer100kpx: 0.085
 };
 
-const canvas=document.querySelector('canvas.sparkles'),ctx=canvas.getContext('2d');
-function resizeCanvas(){
-  const b=canvas.getBoundingClientRect();
-  const dpr=Math.max(1,window.devicePixelRatio||1);
-  canvas.width=Math.floor(b.width*dpr);
-  canvas.height=Math.floor(b.height*dpr);
-  ctx.setTransform(dpr,0,0,dpr,0,0);
-}
-resizeCanvas(); addEventListener('resize',resizeCanvas);
+/* Defringe parameters (tweak if needed) */
+const DEFRINGE = {
+  // Treat very dark semi-transparent pixels as background and remove them.
+  darkLumCutoff: 45,     // 0..255 (higher = removes more)
+  alphaCutoff:   230,    // 0..255 (only affect pixels with alpha below this)
+  // Un-premultiply against black to kill dark halos on edges
+  unpremultiply: true,
+  // Small feather to soften the transition after removing halos
+  featherPasses: 1       // 0..2 (light blur on alpha)
+};
 
-const parts=[]; function rand(a,b){return a+Math.random()*(b-a);}
-function spawn(dt){
-  const w=canvas.clientWidth,h=canvas.clientHeight;
-  const bandTop=h*(CONFIG.bandTopPct/100);
-  const bandH=h*(CONFIG.bandHeightPct/100);
-  const area=w*bandH;
-  const perSec=CONFIG.spawnsPer100kpx*CONFIG.density*(area/100000);
-  const expected=perSec*dt;
-  let toMake=expected+Math.random();
-  while((toMake-=1)>=0){
-    parts.push({
-      x:rand(w*0.2,w*0.8), y:rand(bandTop,bandTop+bandH),
-      vx:rand(-CONFIG.drift,CONFIG.drift), vy:-rand(CONFIG.riseMin,CONFIG.riseMax),
-      r:rand(CONFIG.minSize,CONFIG.maxSize),
-      life:rand(CONFIG.minLife,CONFIG.maxLife), age:0
-    });
+/* ====== CANVAS SETUP ====== */
+const sparkCanvas = document.querySelector('canvas.sparkles');
+const sparkCtx = sparkCanvas.getContext('2d');
+const heroCanvas = document.querySelector('canvas.hero');
+const heroCtx = heroCanvas.getContext('2d');
+const shimmer = document.getElementById('shimmer');
+
+function syncSizes(){
+  const b1 = sparkCanvas.getBoundingClientRect();
+  const dpr = Math.max(1, window.devicePixelRatio||1);
+  for (const c of [sparkCanvas, heroCanvas]){
+    c.width  = Math.floor(b1.width * dpr);
+    c.height = Math.floor(b1.height * dpr);
+    const ctx = c.getContext('2d');
+    ctx.setTransform(dpr,0,0,dpr,0,0); // draw in CSS pixels
   }
 }
+syncSizes();
+addEventListener('resize', syncSizes);
 
+/* ====== LOAD & CLEAN IMAGE ====== */
+const img = new Image();
+img.crossOrigin = "anonymous";
+img.src = IMAGE_URL;
+img.onload = () => {
+  drawClean(img);
+  // Use cleaned dataURL as mask for shimmer so it only affects the artwork
+  const dataURL = heroCanvas.toDataURL('image/png');
+  shimmer.style.setProperty('--mask', `url("${dataURL}")`);
+  shimmer.style.webkitMaskImage = `url("${dataURL}")`;
+  shimmer.style.webkitMaskRepeat = 'no-repeat';
+  shimmer.style.webkitMaskPosition = 'center';
+  shimmer.style.webkitMaskSize = 'contain';
+  shimmer.style.maskImage = `url("${dataURL}")`;
+  shimmer.style.maskRepeat = 'no-repeat';
+  shimmer.style.maskPosition = 'center';
+  shimmer.style.maskSize = 'contain';
+  shimmer.style.opacity = '1';
+};
+
+function drawClean(image){
+  // Scale to fit like object-contain
+  const w = heroCanvas.clientWidth, h = heroCanvas.clientHeight;
+  const scale = Math.min(w/image.naturalWidth, h/image.naturalHeight);
+  const dw = image.naturalWidth * scale;
+  const dh = image.naturalHeight * scale;
+  const dx = (w - dw)/2;
+  const dy = (h - dh)/2;
+
+  // Draw to offscreen for pixel processing
+  const off = document.createElement('canvas');
+  off.width = Math.max(1, Math.floor(dw));
+  off.height= Math.max(1, Math.floor(dh));
+  const octx = off.getContext('2d');
+  octx.drawImage(image, 0, 0, off.width, off.height);
+
+  // Process pixels
+  let imgData = octx.getImageData(0,0,off.width,off.height);
+  let d = imgData.data;
+
+  // Un-premultiply against black (approx) & remove dark fringes
+  for (let i=0; i<d.length; i+=4){
+    let a = d[i+3]/255;
+    if (a<=0) continue;
+
+    if (DEFRINGE.unpremultiply && a>0){
+      d[i]   = Math.min(255, d[i]  / a);
+      d[i+1] = Math.min(255, d[i+1]/ a);
+      d[i+2] = Math.min(255, d[i+2]/ a);
+    }
+
+    const lum = 0.2126*d[i] + 0.7152*d[i+1] + 0.0722*d[i+2];
+    if (lum < DEFRINGE.darkLumCutoff && d[i+3] < DEFRINGE.alphaCutoff){
+      // Make near-black semi-transparent pixels fully transparent
+      d[i+3] = 0;
+    }
+  }
+
+  // Optional small feather on alpha channel
+  if (DEFRINGE.featherPasses > 0){
+    for (let pass=0; pass<DEFRINGE.featherPasses; pass++){
+      imgData = featherAlpha(imgData, off.width, off.height);
+    }
+  }
+
+  octx.putImageData(imgData, 0, 0);
+
+  // Clear and draw the cleaned image to the hero canvas
+  heroCtx.clearRect(0,0,w,h);
+  heroCtx.filter = 'drop-shadow(0 8px 22px rgba(255,150,200,.35))';
+  heroCtx.drawImage(off, dx, dy, dw, dh);
+  heroCtx.filter = 'none';
+}
+
+/* Simple 3x3 box-blur on alpha only */
+function featherAlpha(imgData, W, H){
+  const src = imgData.data;
+  const out = new Uint8ClampedArray(src.length);
+  out.set(src);
+  const idx = (x,y)=>((y*W+x)<<2)+3;
+  for (let y=1; y<H-1; y++){
+    for (let x=1; x<W-1; x++){
+      let sum=0;
+      sum += src[idx(x-1,y-1)] + src[idx(x,y-1)] + src[idx(x+1,y-1)];
+      sum += src[idx(x-1,y  )] + src[idx(x,y  )] + src[idx(x+1,y  )];
+      sum += src[idx(x-1,y+1)] + src[idx(x,y+1)] + src[idx(x+1,y+1)];
+      out[idx(x,y)] = Math.round(sum/9);
+    }
+  }
+  const res = new ImageData(new Uint8ClampedArray(src.length), W, H);
+  res.data.set(src);
+  for (let i=3;i<src.length;i+=4) res.data[i] = out[i];
+  return res;
+}
+
+/* ====== SPARKLES BELOW THE LOGO ====== */
+const parts=[];
+function rand(a,b){return a+Math.random()*(b-a);}
+function resizeSpark(){
+  const b = sparkCanvas.getBoundingClientRect();
+  const dpr = Math.max(1, window.devicePixelRatio||1);
+  sparkCanvas.width = Math.floor(b.width*dpr);
+  sparkCanvas.height= Math.floor(b.height*dpr);
+  sparkCtx.setTransform(dpr,0,0,dpr,0,0);
+}
+resizeSpark(); addEventListener('resize', resizeSpark);
+
+function spawn(dt){
+  const w=sparkCanvas.clientWidth,h=sparkCanvas.clientHeight;
+  const bandTop=h*(CONFIG.bandTopPct/100), bandH=h*(CONFIG.bandHeightPct/100);
+  const area=w*bandH;
+  const perSec=CONFIG.spawnsPer100kpx*CONFIG.density*(area/100000);
+  let toMake=perSec*dt + Math.random();
+  while((toMake-=1)>=0){
+    parts.push({x:rand(w*0.2,w*0.8), y:rand(bandTop,bandTop+bandH),
+      vx:rand(-CONFIG.drift,CONFIG.drift), vy:-rand(CONFIG.riseMin,CONFIG.riseMax),
+      r:rand(CONFIG.minSize,CONFIG.maxSize), life:rand(CONFIG.minLife,CONFIG.maxLife), age:0});
+  }
+}
 let last=performance.now();
 function tick(now){
   const dt=Math.min(0.033,(now-last)/1000); last=now;
   spawn(dt);
+
   for(let i=parts.length-1;i>=0;i--){
     const p=parts[i]; p.age+=dt;
     if(p.age>p.life){ parts.splice(i,1); continue; }
     p.x+=p.vx*dt; p.y+=p.vy*dt;
   }
-  const w=canvas.clientWidth,h=canvas.clientHeight;
-  ctx.clearRect(0,0,w,h);
+
+  const w=sparkCanvas.clientWidth,h=sparkCanvas.clientHeight;
+  sparkCtx.clearRect(0,0,w,h);
 
   const bandTop=h*(CONFIG.bandTopPct/100), bandH=h*(CONFIG.bandHeightPct/100);
   const midY=bandTop+bandH*0.5;
-  const grd=ctx.createRadialGradient(w/2,midY,10,w/2,midY,Math.max(w,h)*0.6);
+  const grd=sparkCtx.createRadialGradient(w/2,midY,10,w/2,midY,Math.max(w,h)*0.6);
   grd.addColorStop(0,'rgba(255,170,210,0.28)');
   grd.addColorStop(1,'rgba(255,170,210,0.0)');
-  ctx.fillStyle=grd;
-  ctx.fillRect(0,bandTop-40,w,bandH+80);
+  sparkCtx.fillStyle=grd; sparkCtx.fillRect(0,bandTop-40,w,bandH+80);
 
-  ctx.save();
-  ctx.shadowColor='rgba(255,160,210,0.95)';
-  ctx.shadowBlur=CONFIG.glow;
+  sparkCtx.save();
+  sparkCtx.shadowColor='rgba(255,160,210,0.95)';
+  sparkCtx.shadowBlur=CONFIG.glow;
   for(const p of parts){
     const t=p.age/p.life;
     const a=(1-t)*(0.35+0.65*(1-Math.abs(t*2-1)));
-    ctx.fillStyle=CONFIG.baseColor+(0.15+0.85*a)+')';
+    sparkCtx.fillStyle=CONFIG.baseColor+(0.15+0.85*a)+')';
     const pulse=0.6+0.4*Math.sin((p.age*6+p.x*0.05));
-    const r=p.r*pulse;
-    drawStar(p.x,p.y,r);
+    drawStar(p.x,p.y,p.r*pulse);
   }
-  ctx.restore();
+  sparkCtx.restore();
+
   requestAnimationFrame(tick);
 }
 requestAnimationFrame(tick);
 
 function drawStar(x,y,r){
-  ctx.beginPath();
-  ctx.moveTo(x,y-r);
-  ctx.lineTo(x+r*0.35,y-r*0.35);
-  ctx.lineTo(x+r,y);
-  ctx.lineTo(x+r*0.35,y+r*0.35);
-  ctx.lineTo(x,y+r);
-  ctx.lineTo(x-r*0.35,y+r*0.35);
-  ctx.lineTo(x-r,y);
-  ctx.lineTo(x-r*0.35,y-r*0.35);
-  ctx.closePath();
-  ctx.fill();
+  sparkCtx.beginPath();
+  sparkCtx.moveTo(x,y-r);
+  sparkCtx.lineTo(x+r*0.35,y-r*0.35);
+  sparkCtx.lineTo(x+r,y);
+  sparkCtx.lineTo(x+r*0.35,y+r*0.35);
+  sparkCtx.lineTo(x,y+r);
+  sparkCtx.lineTo(x-r*0.35,y+r*0.35);
+  sparkCtx.lineTo(x-r,y);
+  sparkCtx.lineTo(x-r*0.35,y-r*0.35);
+  sparkCtx.closePath();
+  sparkCtx.fill();
 }
+
+/* Keep animations stable when tab is hidden */
 document.addEventListener('visibilitychange',()=>{last=performance.now();});
 </script>
 </body>
